@@ -446,6 +446,20 @@ async function admin(){
 
 /* ---------- gates ---------- */
 const G_ICON = '<svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>';
+function adminForm(onSubmit){
+  const det = h("details",{style:"border-top:1px solid var(--line);padding-top:12px"});
+  const err = h("div",{class:"notice",hidden:true});
+  const login = h("input",{class:"search",id:"adm-login",autocomplete:"username",placeholder:"Логин",required:true});
+  const pass = h("input",{class:"search",id:"adm-pass",type:"password",autocomplete:"current-password",placeholder:"Пароль",required:true});
+  const btn = h("button",{class:"btn primary",type:"submit"},"Войти");
+  const form = h("form",{class:"col",style:"gap:10px;margin-top:10px",onsubmit:async e=>{
+    e.preventDefault(); err.hidden=true; btn.disabled=true;
+    try { await onSubmit(login.value.trim(), pass.value); }
+    catch(ex){ err.textContent = ex && ex.message ? ex.message : String(ex); err.hidden=false; btn.disabled=false; }
+  }}, login, pass, btn, err);
+  det.append(h("summary",{style:"cursor:pointer;color:var(--muted);font-size:14px"},"Вход для администратора"), form);
+  return det;
+}
 function gate(kind, extra){
   const bar = h("header",{class:"bar"}, h("div",{class:"bar-in"}, h("span",{class:"logo"}, h("i",null,"PM"), h("b",null,"Путь продакта"))));
   let body;
@@ -453,7 +467,8 @@ function gate(kind, extra){
     const g = h("button",{class:"gbtn",onclick:extra.signIn}); g.innerHTML = G_ICON; g.append("Войти через Google");
     body = h("div",{class:"auth panel"}, h("div",{class:"eyebrow"},"Курс для будущих продактов в банке"), h("h1",{class:"h1"},"Вход"),
       h("p",{class:"lead"},"Войди через Google. Доступ к урокам открывает администратор: после первого входа твоя заявка попадёт к нему на одобрение."), g,
-      extra.error ? h("div",{class:"notice"}, extra.error) : null);
+      extra.error ? h("div",{class:"notice"}, extra.error) : null,
+      extra.adminSignIn ? adminForm(extra.adminSignIn) : null);
   } else if (kind==="pending"){
     body = h("div",{class:"auth panel"}, h("span",{class:"pill pending",style:"align-self:flex-start"},"Заявка на рассмотрении"), h("h1",{class:"h1"},"Почти готово"),
       h("p",{class:"lead"}, `Ты вошёл как ${extra.email||"пользователь"}. Администратор получил заявку. Как только доступ одобрят, обнови страницу.`),

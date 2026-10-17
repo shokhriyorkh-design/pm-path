@@ -12,14 +12,25 @@
   function signIn(){
     auth.signInWithPopup(provider).catch(function(e){
       if (e && (e.code === "auth/popup-blocked" || e.code === "auth/operation-not-supported-in-this-environment")) return auth.signInWithRedirect(provider);
-      APP.gate("login", { signIn: signIn, error: "Не удалось войти: " + (e && e.message ? e.message : e) });
+      APP.gate("login", { signIn: signIn, adminSignIn: adminSignIn, error: "Не удалось войти: " + (e && e.message ? e.message : e) });
+    });
+  }
+  var ADMIN_DOMAIN = "pm-path.app";
+  function adminSignIn(login, password){
+    var email = login.indexOf("@") >= 0 ? login : (login + "@" + ADMIN_DOMAIN);
+    return auth.signInWithEmailAndPassword(email, password).catch(function(e){
+      var c = e && e.code || "";
+      if (c === "auth/invalid-credential" || c === "auth/wrong-password" || c === "auth/user-not-found" || c === "auth/invalid-email" || c === "auth/invalid-login-credentials") throw new Error("Неверный логин или пароль.");
+      if (c === "auth/too-many-requests") throw new Error("Слишком много попыток. Подожди несколько минут.");
+      if (c === "auth/operation-not-allowed") throw new Error("Вход по паролю не включён в Firebase.");
+      throw e;
     });
   }
   function signOut(){ return auth.signOut().then(function(){ location.reload(); }); }
   APP.gate("loading");
 
   auth.onAuthStateChanged(async function(u){
-    if (!u) { APP.gate("login", { signIn: signIn }); return; }
+    if (!u) { APP.gate("login", { signIn: signIn, adminSignIn: adminSignIn }); return; }
     try {
       var users = fs.collection("users");
       var isAdmin = false;
@@ -60,11 +71,11 @@
         course: course,
         store: { save: function(p){ return pref.set(p); }, admin: adminApi },
         progress: prog,
-        ctx: { user: { name: u.displayName || "", email: u.email || "" }, isAdmin: isAdmin, signOut: signOut, syncNote: "Прогресс сохраняется в твоём аккаунте Google и доступен с любого устройства." }
+        ctx: { user: { name: u.displayName || (isAdmin ? "Администратор" : ""), email: u.email || "" }, isAdmin: isAdmin, signOut: signOut, syncNote: "Прогресс сохраняется в твоём аккаунте Google и доступен с любого устройства." }
       });
       if (isAdmin && !course.modules.length) APP.go({ name: "admin" });
     } catch(e) {
-      APP.gate("login", { signIn: signIn, error: "Ошибка подключения: " + (e && e.message ? e.message : e) });
+      APP.gate("login", { signIn: signIn, adminSignIn: adminSignIn, error: "Ошибка подключения: " + (e && e.message ? e.message : e) });
     }
   });
 })();
