@@ -94,7 +94,7 @@ function go(r){ route = r; render(); window.scrollTo({top:0}); }
 /* ---------- shell ---------- */
 function shell(main, side){
   const tabs = [["home","Обзор"],["learn","Уроки"],["trainer","Тренажёр"],["tasks","Задачи"],["review","Ошибки"+(P.mistakes.length?" · "+P.mistakes.length:"")],["blitz","Блиц"],["gloss","Словарь"]];
-  if (ctx.isAdmin) tabs.push(["admin","Админка"]);
+  if (ctx.isAdmin) tabs.push(["admin","Админка"+(adminUsers?(()=>{const n=adminUsers.filter(u=>u.status==="pending").length;return n?" · "+n:"";})():"")]);
   const cur = {module:"learn", lesson:"learn", case:"trainer", task:"tasks"}[route.name] || route.name;
   const bar = h("header",{class:"bar"}, h("div",{class:"bar-in"},
     h("button",{class:"logo",onclick:()=>go({name:"home"}),"aria-label":"На главную"}, h("i",null,"PM"), h("b",null,"Путь продакта")),
@@ -416,17 +416,36 @@ function gloss(){
 
 /* ---------- admin (standalone only) ---------- */
 let adminFilter = "pending";
+let adminUsers = null, adminWatchErr = null, adminWatching = false;
+function startAdminWatch(){
+  if (adminWatching || !ctx.isAdmin || !store || !store.admin || !store.admin.watch) return;
+  adminWatching = true;
+  let first = true;
+  store.admin.watch(list=>{
+    const prevPending = new Set((adminUsers||[]).filter(u=>u.status==="pending").map(u=>u.uid));
+    adminUsers = list; adminWatchErr = null;
+    const pend = list.filter(u=>u.status==="pending");
+    document.title = (pend.length?`(${pend.length}) `:"") + "Путь продакта";
+    if (!first) { const fresh = pend.filter(u=>!prevPending.has(u.uid)); if (fresh.length) toast("Новая заявка: "+(fresh[0].name||fresh[0].email)); }
+    first = false;
+    if (route.name==="admin") { if (!document.querySelector(".admin-busy")) admin(); }
+    else if (!document.querySelector(".opt")) { const nav=document.querySelector(".nav"); if(nav) softRender(); }
+  }, e=>{ adminWatchErr = e; if (route.name==="admin") admin(); });
+}
 async function admin(){
   if (!ctx.isAdmin || !store.admin) return go({name:"home"});
+  startAdminWatch();
   const box = h("div",{class:"col"}, h("p",{class:"lead"},"Загружаю заявки…"));
-  shell([h("div",null,h("div",{class:"eyebrow"},"Управление доступом"),h("h1",{class:"h1",style:"margin-top:6px"},"Админка")), box]);
-  let users=[]; try { users = await store.admin.list(); } catch(e){ box.replaceChildren(h("p",{class:"lead"},"Не удалось загрузить список: "+(e.message||e))); return; }
+  shell([h("div",null,h("div",{class:"eyebrow"},"Управление доступом · обновляется само"),h("h1",{class:"h1",style:"margin-top:6px"},"Админка")), box]);
+  let users=[];
+  if (adminUsers && !adminWatchErr) users = adminUsers;
+  else { try { users = await store.admin.list(); } catch(e){ box.replaceChildren(h("p",{class:"lead"},"Не удалось загрузить список: "+(e.message||e))); return; } }
   const counts = {pending:0,approved:0,denied:0}; users.forEach(u=>counts[u.status]=(counts[u.status]||0)+1);
   const seg = h("div",{class:"seg"}, [["pending","Ожидают"],["approved","Одобрены"],["denied","Отклонены"],["all","Все"]].map(([k,t])=>
     h("button",{"aria-pressed":String(adminFilter===k),onclick:()=>{adminFilter=k;admin();}}, t+(k!=="all"?" · "+(counts[k]||0):""))));
   const rows = users.filter(u=>adminFilter==="all"||u.status===adminFilter).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
   const label = {pending:"Ожидает",approved:"Одобрен",denied:"Отклонён"};
-  async function setS(u,s){ try{ await store.admin.setStatus(u.uid,s); toast(s==="approved"?"Доступ открыт":"Доступ закрыт"); admin(); }catch(e){ toast("Не получилось: "+(e.message||e)); } }
+  async function setS(u,s){ try{ await store.admin.setStatus(u.uid,s); toast(s==="approved"?"Доступ открыт":"Доступ закрыт"); if(!adminWatching||adminWatchErr) admin(); }catch(e){ toast("Не получилось: "+(e.message||e)); } }
   const table = rows.length ? h("div",{class:"scroll"}, h("table",{class:"table"},
     h("thead",null,h("tr",null,h("th",null,"Пользователь"),h("th",null,"Почта"),h("th",null,"Заявка"),h("th",null,"Статус"),h("th",null,""))),
     h("tbody",null, rows.map(u=>h("tr",null,
@@ -457,7 +476,7 @@ function adminForm(onSubmit){
     try { await onSubmit(login.value.trim(), pass.value); }
     catch(ex){ err.textContent = ex && ex.message ? ex.message : String(ex); err.hidden=false; btn.disabled=false; }
   }}, login, pass, btn, err);
-  det.append(h("summary",{style:"cursor:pointer;color:var(--muted);font-size:14px"},"Вход для администратора"), form);
+  det.append(h("summary",{style:"cursor:pointer;color:var(--muted);font-size:14px"},"Вход по логину и паролю"), form);
   return det;
 }
 function gate(kind, extra){
@@ -471,7 +490,7 @@ function gate(kind, extra){
       extra.adminSignIn ? adminForm(extra.adminSignIn) : null);
   } else if (kind==="pending"){
     body = h("div",{class:"auth panel"}, h("span",{class:"pill pending",style:"align-self:flex-start"},"Заявка на рассмотрении"), h("h1",{class:"h1"},"Почти готово"),
-      h("p",{class:"lead"}, `Ты вошёл как ${extra.email||"пользователь"}. Администратор получил заявку. Как только доступ одобрят, обнови страницу.`),
+      h("p",{class:"lead"}, `Ты вошёл как ${extra.email||"пользователь"}. Администратор получил заявку. Как только доступ одобрят, страница откроется сама.`),
       h("div",{class:"btn-row"}, h("button",{class:"btn primary",onclick:()=>location.reload()},"Проверить снова"), h("button",{class:"btn",onclick:extra.signOut},"Выйти")));
   } else if (kind==="denied"){
     body = h("div",{class:"auth panel"}, h("span",{class:"pill denied",style:"align-self:flex-start"},"Доступ закрыт"), h("h1",{class:"h1"},"Нет доступа"),
@@ -503,6 +522,7 @@ window.APP = {
     indexCourse(opts.course); store = opts.store; ctx = Object.assign(ctx, opts.ctx||{});
     P = merge(blank(), opts.progress || null);
     render();
+    startAdminWatch();
   },
   attachStore(newStore, remote, note){ // late-arriving store (claude.ai): merge and keep going
     store = newStore; ctx.syncNote = note || ctx.syncNote;

@@ -42,7 +42,12 @@
         snap = await uref.get();
       }
       var status = snap.data().status;
-      if (!isAdmin && status === "pending") { APP.gate("pending", { email: u.email, signOut: signOut }); return; }
+      if (!isAdmin && status === "pending") {
+        APP.gate("pending", { email: u.email, signOut: signOut });
+        // как только админ одобрит (на сайте или в Telegram) — страница откроется сама
+        uref.onSnapshot(function(s){ var st = s.exists && s.data().status; if (st && st !== "pending") location.reload(); }, function(){});
+        return;
+      }
       if (!isAdmin && status !== "approved") { APP.gate("denied", { signOut: signOut }); return; }
 
       var course = { modules: [], glossary: [], tasks: [] };
@@ -55,6 +60,7 @@
 
       var adminApi = isAdmin ? {
         list: async function(){ var q = await users.get(); return q.docs.map(function(d){ var x = d.data(); x.uid = d.id; return x; }); },
+        watch: function(cb, onErr){ return users.onSnapshot(function(q){ cb(q.docs.map(function(d){ var x = d.data(); x.uid = d.id; return x; })); }, onErr); },
         setStatus: function(uid, s){ return users.doc(uid).update({ status: s, decidedAt: Date.now() }); },
         contentInfo: function(){ return course.modules.length ? ("Загружено модулей: " + course.modules.length + ". Чтобы обновить материалы, загрузи новый content.json — он заменит текущие.") : "Материалы ещё не загружены. Загрузи файл content.json из папки сайта — без него ученики увидят экран «Курс ещё не загружен»."; },
         uploadContent: async function(data){
